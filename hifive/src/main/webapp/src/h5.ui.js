@@ -135,9 +135,8 @@
 	 */
 	var usePositionFixed = (function() {
 		var ua = h5.env.ua;
-		var fullver = parseFloat(ua.browserVersionFull);
-		return !((ua.isAndroidDefaultBrowser && fullver <= 2.1) || ua.isAndroidDefaultBrowser
-				|| (ua.isiOS && ua.browserVersion < 5) || (ua.isIE && ua.browserVersion < 7) || ua.isWindowsPhone);
+		return !(ua.isAndroidDefaultBrowser || (ua.isiOS && ua.browserVersion < 5)
+				|| (ua.isIE && ua.browserVersion < 7) || ua.isWindowsPhone);
 	})();
 
 	/**
