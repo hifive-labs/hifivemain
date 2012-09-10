@@ -113,11 +113,7 @@
 	})();
 
 	/**
-	 * 以下の判定が全てtrueの場合、スロバーをCSS3Animationで描画する。
-	 * <ul>
-	 * <li>position:fixedをサポートしているユーザエージェントか。</li>
-	 * <li>CSSの『animation-name』プロパティをサポートしているか。</li>
-	 * <h5>position:fixedに関して</h5>
+	 * position:fixedでインジケータを描画するかのフラグ。
 	 * <p>
 	 * 自動更新またはアップデート可能なブラウザは、最新のブラウザであるものとして判定しない。(常にposition:fixedは有効とする)
 	 * <p>
@@ -128,20 +124,28 @@
 	 * <li>機能ベースでモバイル・デスクトップの両方を検知するのは困難。</li>
 	 * </ul>
 	 * <p>
-	 * <b>備考</b>
+	 * <b>position:fixedについて</b>
 	 * <ul>
 	 * <li>position:fixed対応表: http://caniuse.com/css-fixed</li>
-	 * <li>Androidは2.2からposition:fixedをサポートしており、2.2と2.3はmetaタグに「user-scalable=no」が設定されていると機能するが、バグが多いためAndroid3未満はposition:fixed未サポートとして処理する。<br>
+	 * <li>Androidは2.2からposition:fixedをサポートしており、2.2と2.3はmetaタグに「user-scalable=no」が設定されていないと機能しない。<br>
 	 * http://blog.webcreativepark.net/2011/12/07-052517.html </li>
+	 * <li>Androidのデフォルトブラウザでposition:fixedを使用すると、2.xはkeyframesとtransformをposition:fixedで使用すると正しい位置に表示されないバグが、4.xは画面の向きが変更されると描画が崩れるバグがあるため使用しない。
 	 * <li>Windows Phoneは7.0/7.5ともに未サポート https://github.com/jquery/jquery-mobile/issues/3489</li>
 	 * <ul>
 	 */
-	var isTransformAnimationAvailable = (function() {
+	var usePositionFixed = (function() {
 		var ua = h5.env.ua;
 		var fullver = parseFloat(ua.browserVersionFull);
-		return !((ua.isAndroidDefaultBrowser && fullver < 3) || (ua.isiOS && ua.browserVersion < 5)
-				|| (ua.isIE && ua.browserVersion < 7) || ua.isWindowsPhone);
+		return !((ua.isAndroidDefaultBrowser && fullver <= 2.1) || ua.isAndroidDefaultBrowser
+				|| (ua.isiOS && ua.browserVersion < 5) || (ua.isIE && ua.browserVersion < 7) || ua.isWindowsPhone);
 	})();
+
+	/**
+	 * CSS3 Animationsをサポートしているか
+	 * <p>
+	 * (true:サポート/false:未サポート)
+	 */
+	var isCSS3AnimationsSupported = null;
 
 	// =============================
 	// Functions
@@ -291,9 +295,8 @@
 		document.getElementsByTagName('head')[0].appendChild(vmlStyle);
 	}
 
-	// CSS3Animationのサポート判定
-	isTransformAnimationAvailable = isTransformAnimationAvailable ? supportsCSS3Property('animationName')
-			: false;
+	// CSS3 Animationのサポート判定
+	isCSS3AnimationsSupported = supportsCSS3Property('animationName');
 
 	/**
 	 * VML版スロバー (IE 6,7,8)用
@@ -500,7 +503,7 @@
 			}
 			this.highlightPos = highlightPos;
 
-			if (isTransformAnimationAvailable) {
+			if (isCSS3AnimationsSupported) {
 				// CSS3Animationをサポートしている場合は、keyframesでスロバーを描写する
 				canvas.className = CLASS_THROBBER_CANVAS;
 			} else {
@@ -550,20 +553,22 @@
 
 		var that = this;
 		var $window = $(window);
+		var $body = $('body');
 		var $target = this._isGlobalBlockTarget() ? $('body') : $(this.target);
 		var targetPosition = $target.css('position');
 		var targetZoom = $target.css('zoom');
 
 		// コンテンツ領域全体にオーバーレイをかける(見えていない部分にもオーバーレイがかかる)
 		function resizeOverlay() {
-			$('body div.blockUI.blockOverlay').height(getDocumentHeight());
+			$body.children('div.blockUI.blockOverlay').height(getDocumentHeight());
 			// widthは100%が指定されているので計算しない
 		}
 
 		// インジケータ上で発生したイベントを無効にする
 		function disableEventOnIndicator() {
-			var $blockUIOverlay = $('body div.blockUI.blockOverlay');
-			var $blockUIInner = $('body div.blockUI.' + that._style.blockMsgClass + '.blockPage');
+			var $blockUIOverlay = $body.children('div.blockUI.blockOverlay');
+			var $blockUIInner = $body.children('div.blockUI.' + that._style.blockMsgClass
+					+ '.blockPage');
 			var disabledEventTypes = 'click dblclick touchstart touchmove touchend mousedown mouseup mousemove mouseover mouseout mouseenter mouseleave focus focusin focusout blur change select';
 
 			$.each([$blockUIOverlay, $blockUIInner], function(i, v) {
@@ -640,16 +645,14 @@
 				}
 			},
 			onBlock: function() {
-				if (!that._isGlobalBlockTarget()) {
-					return;
-				}
+				if (that._isGlobalBlockTarget()) {
+					if (!usePositionFixed) {
+						$window.bind('touchmove scroll', scrollstopHandler);
+						resizeOverlay();
+					}
 
-				if (!isTransformAnimationAvailable) {
-					$window.bind('touchmove scroll', scrollstopHandler);
-					resizeOverlay();
+					disableEventOnIndicator();
 				}
-
-				disableEventOnIndicator();
 
 				// 画面の向きが変更されたらインジータが中央に表示されるよう更新する
 				$window.bind('orientationchange resize', resizeIndicatorHandler);
@@ -715,11 +718,6 @@
 				$.blockUI(setting);
 				$blockElement = $('body').children(
 						'.blockUI.' + setting.blockMsgClass + '.blockPage');
-
-				if (!isTransformAnimationAvailable) {
-					$blockElement.css('position', 'absolute');
-					$('body div.blockUI.blockOverlay').css('position', 'absolute');
-				}
 			} else {
 				var $target = $(this.target);
 				$target.block(setting);
@@ -752,7 +750,7 @@
 				// MobileSafari(iOS4)だと $(window).height()≠window.innerHeightなので、window.innerHeightを参照する
 				var displayHeight = window.innerHeight ? window.innerHeight : $(window).height();
 
-				if (isTransformAnimationAvailable) {
+				if (usePositionFixed) {
 					// 可視領域からtopを計算する
 					$blockElement.css('top', ((displayHeight - $blockElement.outerHeight()) / 2)
 							+ 'px');
